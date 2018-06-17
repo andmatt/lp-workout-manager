@@ -3,11 +3,4 @@ name: environment
 dependencies:
   - python=3.4
   - numpy
-  - ast
-  - datetime
-  - json
-  - logging
-  - sqlite3
-  - sys
-  - numpy
   - pandas
