@@ -1,6 +1,7 @@
 '''functions for retrieving and updating various database fields'''
 
 import ast
+import datetime
 import json
 import logging
 import sqlite3
@@ -10,7 +11,7 @@ from logging import Formatter, StreamHandler
 import numpy as np
 import pandas as pd
 
-from functions.dt_funcs import buffer_week, get_month, get_week, new_month, now
+from functions.dt_funcs import buffer_week, get_month, get_week, new_month, get_dates, get_latest, now
 
 logger = logging.getLogger('workout_logger')
 formatter = Formatter('%(asctime)s | %(levelname)s | %(message)s')
@@ -20,10 +21,27 @@ logger.addHandler(sh)
 
 logger.setLevel(logging.INFO)
 
-sqlite3.register_adapter(np.int64, lambda val: int(val))
-sqlite3.register_adapter(pd.tslib.Timestamp, lambda val: str(val))
-con = sqlite3.connect('workout.db', detect_types=sqlite3.PARSE_DECLTYPES)
-cur = con.cursor()
+
+def get_db_con(db='workout.db'):
+    '''
+    gets sqlite database connection with necessary adapters
+    '''
+    sqlite3.register_adapter(np.int64, lambda val: int(val))
+    sqlite3.register_adapter(pd.tslib.Timestamp, lambda val: str(val))
+    con = sqlite3.connect(db, detect_types=sqlite3.PARSE_DECLTYPES)
+    return con
+
+
+def create_db(con):
+    with con:
+        cur = con.cursor()
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS dim_user(user_id INT, user_name STRING, email STRING)")
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS dim_progression(user_id INT, prog_dict JSON)")
+        cur.execute("CREATE TABLE IF NOT EXISTS one_rep_max(user_id INT, data_start_date TIMESTAMP, data_end_date TIMESTAMP, orm_dict JSON, publish_time TIMESTAMP)")
+        cur.execute("CREATE TABLE IF NOT EXISTS accessory(user_id INT, me_name STRING, ae_name STRING, ae_weight FLOAT, sets INT, reps INT, publish_time TIMESTAMP)")
+        cur.execute("CREATE TABLE IF NOT EXISTS pause_workout(user_id INT, pause_date TIMESTAMP DEFAULT '2999-12-31 23:59:59', pause_flag BOOLEAN DEFAULT False)")
 
 
 def get_user_id(con, user):
@@ -74,8 +92,8 @@ def table_overwrite(table, df, primary_keys, con):
         if 'both' in match['_merge'].tolist():
             arg, params = delete_params(primary_slice)
             cur.execute(f'DELETE from {table} WHERE {arg}', params)
-            print('duplicate entry deleted')
-        print('new entry loaded')
+            logger.info('duplicate entry deleted')
+        logger.info('new entry loaded')
         df_slice.to_sql(table, con, if_exists='append', index=False)
 
 
@@ -136,36 +154,25 @@ def add_weight(prog_dict, orm_dict):
     return new
 
 
-def get_dates(user_id, con):
-    orm = pd.read_sql(
-        'SELECT * FROM one_rep_max WHERE user_id = ?', con, params=[user_id])
-    if orm.shape[0] == 0:
-        return None, None
-    else:
-        month = get_month(orm)
-        week = get_week(orm)
-        return month, week
-
-
-def get_new_orm_dict(user_id, con):
-    month, week = get_dates(user_id, con)
-    if month is None:
+def get_new_orm_dict(one_rep_max, user_id, con):
+    latest = get_latest(one_rep_max)
+    if latest is None:
         logger.warning('no info in one_rep_max - populate it first')
         return
-    orm_dict = retrieve_json(month, 'orm_dict')
+    orm_dict = retrieve_json(latest, 'orm_dict')
     prog_dict = pull_prog(user_id, con)
     new = add_weight(orm_dict, prog_dict)
     return new
 
 
-def get_new_orm(user_id, con):
-    month, week = get_dates(user_id, con)
-    if month is None:
+def get_new_orm(one_rep_max, user_id, con):
+    latest = get_latest(one_rep_max)
+    if latest is None:
         logger.warning('no info in one_rep_max - populate it first')
         return
-    start = month['data_end_date'][0] + datetime.timedelta(days=1)
-    new_dates = new_month(start)
-    new_orm = get_new_orm_dict(user_id, con)
+    start = latest['data_end_date'][0] + datetime.timedelta(days=1)
+    new_dates = new_month(start, timeskip='forward')
+    new_orm = get_new_orm_dict(one_rep_max, user_id, con)
     entry = pd.DataFrame({'user_id': user_id,
                           'data_start_date': new_dates[0],
                           'data_end_date': new_dates[1],
@@ -206,13 +213,14 @@ class DBHelper(object):
         accessory_df = accessory_df.reset_index(drop=True)
         accessory_df['user_id'] = self.user_id
         accessory_df['publish_time'] = now(date=False)
-        accessory_df.to_sql('accessory', con,
+        accessory_df.to_sql('accessory', self.con,
                             if_exists='append', index=False)
         logger.info('dataframe is valid - accessory populated')
         return accessory_df.head(3)
 
     def set_one_rep_max(self, orm_dict):
-        month, week = get_dates(self.user_id, con)
+        month, week = get_dates(self.user_id, self.con)
+        full_orm = table_pull(self.con, self.user_id, 'one_rep_max')
         orm_dict = json.dumps(orm_dict)
         if month is not None:
             update = month.copy()
@@ -221,9 +229,19 @@ class DBHelper(object):
                             'user_id', 'data_start_date'], self.con)
             logger.info('dict is valid - one_rep_max overwitten')
         else:
+            need_buffer = True
             buffer = buffer_week()
-            month = new_month()
-            for dates in buffer, month:
+            # only add buffer week if needed
+            if full_orm.shape[0] > 0:
+                for i in [0, 1]:
+                    match = get_month(full_orm, custom_dt=buffer[i])
+                    if match.shape[0] > 0:
+                        need_buffer = False
+                        logger.info('buffer week not needed')
+            new_dates = [new_month()]
+            if need_buffer == True:
+                new_dates = new_dates + [buffer]
+            for dates in new_dates:
                 update = pd.DataFrame.from_dict({0: {'user_id': self.user_id,
                                                      'data_start_date': dates[0],
                                                      'data_end_date': dates[1],
@@ -235,16 +253,26 @@ class DBHelper(object):
 
     def progress_one_rep_max(self):
         orm = self.get_orm()
-        if orm.shape == 0:
-            new_orm = get_new_orm(self.user_id, self.con)
-            new_orm.to_sql('one_rep_max', self.con,
-                           if_exists='append', index=False)
+        if orm is None:
+            full_orm = table_pull(self.con, self.user_id, 'one_rep_max')
+            if full_orm.shape[0] == 0:
+                logger.warning(
+                    'No orm weights are set - you must seed the db with your starting weight using self.set_one_rep_max')
+                return None
+            else:
+                latest = get_latest(full_orm)
+                new_orm = get_new_orm(full_orm, self.user_id, self.con)
+                new_orm.to_sql('one_rep_max', self.con,
+                               if_exists='append', index=False)
+                logger.info('new orm set')
+        else:
+            logger.info(
+                'using current orm - use self.set_one_rep_max if you wish to modify it')
 
     def get_orm(self):
         month, week = get_dates(self.user_id, self.con)
         if month is None:
-            month = buffer_week()
-        month = month.reset_index(drop=True)
+            return None
         s = '''
         SELECT * FROM
         one_rep_max
@@ -254,7 +282,7 @@ class DBHelper(object):
         '''
         start = month['data_start_date'][0]
         end = month['data_end_date'][0]
-        orm = pd.read_sql(s, con, params=[self.user_id, start, end])
+        orm = pd.read_sql(s, self.con, params=[self.user_id, start, end])
         return orm
 
     def get_accessory(self):
