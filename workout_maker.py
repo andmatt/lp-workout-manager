@@ -37,7 +37,7 @@ class WorkoutMaker(DBHelper):
         week = get_week(orm)
         start = orm['data_start_date'][0] + datetime.timedelta(days=week*7)
         end = start + datetime.timedelta(days=7)
-        return week, start, end
+        return week, start.date(), end.date()
 
     def main(self, path='./lp-workout.html'):
         self.create_workout_df()
