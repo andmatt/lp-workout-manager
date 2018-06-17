@@ -1,7 +1,7 @@
 [![Binder](https://mybinder.org/badge.svg)](https://mybinder.org/v2/gh/andmatt/lp-workout-manager/master)
 
 # lp-workout-manager
-Tool to track weights for a standard linear progression workout. Utilizes Jupyter Notebook as the fronted, and `sqlite` as the backend database. This inputs of this tool are specific to a 5-3-1 workout with four 4x10 accessory exercises for each split. Check out the binder link for an interactive look at how the output is generated and stored.
+Tool to track weights for a standard linear progression workout. Utilizes Jupyter Notebook as the fronted, and `sqlite` as the backend database. This inputs of this tool are specific to a 5-3-1 workout with four 4x10 accessory exercises for each split. Check out the <a href="https://mybinder.org/v2/gh/andmatt/lp-workout-manager/master" target="_blank">binder link</a> for an interactive look at how the output is generated and stored. A sample of the final output file can be found <a href="http://htmlpreview.github.io/?https://github.com/andmatt/lp-workout-manager/blob/master/lp-workout.html" target="_blank">here</a>.
 
 ### Features
 * Merges a `mapping_dictionary` onto user defined `one_rep_max` weights to generate a complete workout
