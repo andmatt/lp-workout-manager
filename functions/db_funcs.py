@@ -11,8 +11,8 @@ from logging import Formatter, StreamHandler
 import numpy as np
 import pandas as pd
 
-from functions.dt_funcs import buffer_week, get_month, get_week, new_month, get_dates, get_latest, now
-logger = get_logger()
+from functions.dt_funcs import (buffer_week, get_dates, get_latest, get_month,
+                                get_week, new_month, now)
 
 
 def get_logger():
@@ -34,6 +34,9 @@ def get_logger():
     logger.addHandler(fh)
     logger.setLevel(logging.INFO)
     return logger
+
+
+logger = get_logger()
 
 
 def get_db_con(db='workout.db'):
@@ -261,7 +264,7 @@ def create_user(name, email, con):
     -------
     entry: obj, pandas df
         the entry will be uploaded
-    
+
     Raises
     ------
     AssertionError
@@ -395,6 +398,7 @@ class DBHelper(object):
         email of username - only needed if user has not yet
         been populated in dim_users
     '''
+
     def __init__(self, con, user, email=None):
         self._user_name = user
         self.con = con
@@ -412,7 +416,7 @@ class DBHelper(object):
         Parameters
         ----------
         prog_dict: obj, dict
-        
+
         Raises
         ------
         AssertionError
@@ -509,7 +513,7 @@ class DBHelper(object):
         '''
         Adds progression_dict onto one_rep_max until the current
         month is populated. 
-        
+
         Notes
         -----
         Does nothing if one_rep_max is empty or the current month is already populated
@@ -526,7 +530,7 @@ class DBHelper(object):
                     latest = get_latest(full_orm)
                     new_orm = get_new_orm(full_orm, self.user_id, self.con)
                     new_orm.to_sql('one_rep_max', self.con,
-                                if_exists='append', index=False)
+                                   if_exists='append', index=False)
                     logger.info('orm progressed by one month')
                     orm = self.get_orm()
         else:
