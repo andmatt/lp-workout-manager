@@ -53,8 +53,8 @@ def get_db_con(db='workout.db'):
     -------
     con: sqlite3.Connection
     '''
-    sqlite3.register_adapter(np.int64, lambda val: int(val))
-    sqlite3.register_adapter(pd.tslib.Timestamp, lambda val: str(val))
+    sqlite3.register_adapter(np.int64, lambda x: int(x))
+    sqlite3.register_adapter(pd.Timestamp, lambda x: str(x))
     con = sqlite3.connect(db, detect_types=sqlite3.PARSE_DECLTYPES)
     return con
 
@@ -301,6 +301,9 @@ def pull_prog(user_id, con):
     '''
     prog = pd.read_sql(
         'SELECT * FROM dim_progression WHERE user_id = ?', con, params=[user_id])
+    if prog.shape[0] == 0:
+        logger.warning('No progression dict loaded')
+        return None
     prog_dict = retrieve_json(prog, 'prog_dict')
     return prog_dict
 
@@ -348,11 +351,12 @@ def get_new_orm_dict(one_rep_max, user_id, con):
         return
     orm_dict = retrieve_json(latest, 'orm_dict')
     prog_dict = pull_prog(user_id, con)
+    assert prog_dict is not None, 'dim_progression is not populated'
     new = add_dicts(orm_dict, prog_dict)
     return new
 
 
-def get_new_orm(one_rep_max, user_id, con):
+def get_new_orm(one_rep_max, user_id, con, week=1):
     '''
     Retrieves one_rep_max entry, and creates
     a new entry for the next month
@@ -363,6 +367,8 @@ def get_new_orm(one_rep_max, user_id, con):
         one_rep_max table
     user_id: int
     con: sqlite3.Connection
+    week: int, optional
+        week to start month on
 
     Returns
     -------
@@ -374,7 +380,7 @@ def get_new_orm(one_rep_max, user_id, con):
         logger.warning('no info in one_rep_max - populate it first')
         return
     start = latest['data_end_date'][0] + datetime.timedelta(days=1)
-    new_dates = new_month(start, timeskip='forward')
+    new_dates = new_month(start, timeskip='forward', week=week)
     new_orm = get_new_orm_dict(one_rep_max, user_id, con)
     entry = pd.DataFrame({'user_id': user_id,
                           'data_start_date': new_dates[0],
@@ -459,13 +465,15 @@ class DBHelper(object):
         logger.info('dataframe is valid - accessory populated')
         return accessory_df.head(3)
 
-    def set_one_rep_max(self, orm_dict):
+    def set_one_rep_max(self, orm_dict, start_week=None):
         '''
         Sets one_rep_max for the current month
 
         Parameters
         ----------
         orm_dict: obj, dict
+        week: int, optional
+            starting week
 
         Notes
         -----
@@ -481,23 +489,34 @@ class DBHelper(object):
         month, week = get_dates(self.user_id, self.con)
         full_orm = table_pull(self.con, self.user_id, 'one_rep_max')
         orm_dict = json.dumps(orm_dict)
+        buffer = buffer_week()
+        if month is not None:
+            if month['data_start_date'][0] == buffer[0] and month['data_end_date'][0] == buffer[1]:
+                logger.warning('Overwriting entry after buffer week - make sure this is what you wanted')
+                month = None
         if month is not None:
             update = month.copy()
+            if start_week is not None:
+                new_dates = new_month(week=start_week)
+                update['data_end_date'] = new_dates[1]
+                logger.info('start week set to %s', start_week)
             update['orm_dict'] = orm_dict
             table_overwrite('one_rep_max', update, [
                             'user_id', 'data_start_date'], self.con)
             logger.info('dict is valid - one_rep_max overwitten')
         else:
             need_buffer = True
-            buffer = buffer_week()
             # only add buffer week if needed
             if full_orm.shape[0] > 0:
                 for i in [0, 1]:
                     match = get_month(full_orm, custom_dt=buffer[i])
                     if match.shape[0] > 0:
                         need_buffer = False
-                        logger.info('buffer week not needed')
-            new_dates = [new_month()]
+            if need_buffer == False:
+                logger.info('buffer week not needed')
+            if start_week is None:
+                start_week = 1
+            new_dates = [new_month(week=start_week)]
             if need_buffer == True:
                 new_dates = new_dates + [buffer]
             for dates in new_dates:

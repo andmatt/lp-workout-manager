@@ -41,7 +41,7 @@ def buffer_week():
     return start, end
 
 
-def new_month(start=None, timeskip='forward'):
+def new_month(start=None, timeskip='forward', week=1):
     '''
     Generates start and end dates for one month
 
@@ -57,9 +57,16 @@ def new_month(start=None, timeskip='forward'):
     -------
     start: timestamp
     end: timestamp
+
+    Raises
+    ------
+    AssertionError
+        if weeks are greater than 4
     '''
+    assert week <= 4, 'Entries are a max of one month long'
+
     if start is not None:
-        assert start.weekday() == 0, 'Week starts on Sunday'
+        assert start.dayofweek == 6, 'Week starts on Sunday'
     else:
         start = pd.to_datetime(now())
 
@@ -71,7 +78,8 @@ def new_month(start=None, timeskip='forward'):
         back_to_sunday = start.dayofweek + 1
         start = start - datetime.timedelta(days=back_to_sunday)
 
-    end = start + datetime.timedelta(days=27)
+    week_adjustment = 7 * (week-1)
+    end = start + datetime.timedelta(days=27-week_adjustment)
     return start, end
 
 
