@@ -6,7 +6,7 @@ import json
 import logging
 import sqlite3
 import sys
-from logging import Formatter, StreamHandler
+from logging import Formatter, StreamHandler, RotatingFileHandler
 
 import numpy as np
 import pandas as pd
