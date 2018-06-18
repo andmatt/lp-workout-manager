@@ -12,19 +12,42 @@ import numpy as np
 import pandas as pd
 
 from functions.dt_funcs import buffer_week, get_month, get_week, new_month, get_dates, get_latest, now
+logger = get_logger()
 
-logger = logging.getLogger('workout_logger')
-formatter = Formatter('%(asctime)s | %(levelname)s | %(message)s')
-sh = StreamHandler(stream=sys.stdout)
-sh.setFormatter(formatter)
-logger.addHandler(sh)
 
-logger.setLevel(logging.INFO)
+def get_logger():
+    '''
+    Returns
+    -------
+    logger: module
+        custom logging module with stream
+        and file handler
+    '''
+    logger = logging.getLogger('workout_logger')
+    formatter = Formatter('%(asctime)s | %(levelname)s | %(message)s')
+    sh = StreamHandler(stream=sys.stdout)
+    sh.setFormatter(formatter)
+    fh = RotatingFileHandler(
+        './workout.log', maxBytes=10*1024*1024, backupCount=0)
+    fh.setFormatter(formatter)
+    logger.addHandler(sh)
+    logger.addHandler(fh)
+    logger.setLevel(logging.INFO)
+    return logger
 
 
 def get_db_con(db='workout.db'):
     '''
     gets sqlite database connection with necessary adapters
+
+    Parameters
+    ----------
+    db: str
+        sqlite database name
+
+    Returns
+    -------
+    con: sqlite3.Connection
     '''
     sqlite3.register_adapter(np.int64, lambda val: int(val))
     sqlite3.register_adapter(pd.tslib.Timestamp, lambda val: str(val))
@@ -33,6 +56,13 @@ def get_db_con(db='workout.db'):
 
 
 def create_db(con):
+    '''
+    Creates database tables if they do not exist
+
+    Parameters
+    ----------
+    con: sqlite3.Connection
+    '''
     with con:
         cur = con.cursor()
         cur.execute(
@@ -44,17 +74,17 @@ def create_db(con):
         cur.execute("CREATE TABLE IF NOT EXISTS pause_workout(user_id INT, pause_date TIMESTAMP DEFAULT '2999-12-31 23:59:59', pause_flag BOOLEAN DEFAULT False)")
 
 
-def get_user_id(con, user):
-    s = '''
-    SELECT user_id FROM dim_user
-    WHERE user_name = ?
-    '''
-    user_id = pd.read_sql(s, con, params=[user])
-    user_id = user_id.reset_index(drop=True)
-    return user_id['user_id'][0]
-
-
 def table_pull(con, user_id, table):
+    '''
+    Wrapper function to pull an entire table given 
+    a user_id and table name
+
+    Parameters
+    ----------
+    con: sqlite3.Connection
+    user_id: int
+    table: str
+    '''
     s = f'''
     SELECT * FROM
     {table}
@@ -64,18 +94,31 @@ def table_pull(con, user_id, table):
     return table
 
 
-def table_update(con, user, table, var, val):
-    user_id = get_user_id(con, user)
-    s = f'''
-    UPDATE {table}
-    SET {var} = ?
-    WHERE user_id = ?
-    '''
-    with con.cursor() as cur:
-        cur.execute(s, params=[val, user_id])
-
-
 def delete_params(df_slice):
+    '''
+    Returns sql arguments for table_overwrite
+    function
+
+    Parameters
+    ----------
+    df_slice: obj, pandas df
+        one row dataframes containing columns that match
+        the primary keys of a database table
+
+    Returns
+    -------
+    arg: str
+        WHERE argument to pass df_slice values
+        into a DELETE sql query to 
+    params: list
+        list of params corresponding to df_slice values
+        to delete from table if there is a match
+
+    Raises
+    ------
+    AssertionError
+        If df_slice is not one row
+    '''
     assert df_slice.shape[0] in (1, 0), 'must be one row'
     arg = ' AND '.join([f'{col}=?' for col in df_slice.columns])
     params = list(df_slice[col][0] for col in df_slice.columns)
@@ -83,6 +126,21 @@ def delete_params(df_slice):
 
 
 def table_overwrite(table, df, primary_keys, con):
+    '''
+    Appends a df to a table. Iterates through the df
+    row-wise and overwrites primary-key matches
+
+    Parameters
+    ----------
+    table: str
+        table name
+    df: obj, pandas df
+        dataframe to add to db table
+    primary_keys: list of str
+        list of column name(s) that act as the
+        table primary key
+    con: sqlite3.Connection
+    '''
     cur = con.cursor()
     existing = pd.read_sql(f'SELECT * from {table}', con)
     for i in df.index:
@@ -98,11 +156,39 @@ def table_overwrite(table, df, primary_keys, con):
 
 
 def retrieve_json(df, json_col):
+    '''
+    Retrieves a dictionary from a JSON
+    column
+
+    Parameters
+    ----------
+    df: obj, pandas df
+        must be one row
+    json_col: str
+        column name with JSON
+
+    Returns
+    -------
+    obj, dict
+    '''
     df = df[json_col].reset_index(drop=True)
     return ast.literal_eval(df[0])
 
 
 def name_exists(name, con):
+    '''
+    Checks if a name is already present in dim_user
+
+    Parameters
+    ----------
+    name: str
+    con: sqlite3.Connection
+
+    Returns
+    -------
+    bool
+        TRUE if name exists, else FALSE
+    '''
     s = '''
     SELECT DISTINCT user_name FROM dim_user
     '''
@@ -113,7 +199,40 @@ def name_exists(name, con):
         return False
 
 
+def get_user_id(user, con):
+    '''
+    Gets the user_id that corresponds to a user_name
+    in dim_user
+
+    Parameters
+    ----------
+    user: str
+    con: sqlite3.Connection
+    '''
+    s = '''
+    SELECT user_id FROM dim_user
+    WHERE user_name = ?
+    '''
+    user_id = pd.read_sql(s, con, params=[user])
+    user_id = user_id.reset_index(drop=True)
+    return user_id['user_id'][0]
+
+
 def create_user_entry(name, email, con):
+    '''
+    Creates a new entry for dim_user
+
+    Parameters
+    ----------
+    name: your name
+    email: your email
+    con: sqlite3.Connection
+
+    Returns
+    -------
+    new_user: obj, pandas df
+        the entry will be uploaded
+    '''
     s = '''
     SELECT ? as user_name, MAX(user_id) as user_id FROM dim_user
     '''
@@ -124,48 +243,128 @@ def create_user_entry(name, email, con):
     else:
         new_user['user_id'] = new_user['user_id'] + 1
     new_user['email'] = email
-    pause = new_user[['user_id']]
-    pause.to_sql('pause_workout', con, if_exists='append', index=False)
     return new_user
 
 
 def create_user(name, email, con):
     '''
-    Adds new name entry to database
+    Uploads new user entry to dim_users and creates the
+    corresponding default entry in `pause_workout`
+
+    Parameters
+    ----------
+    name: your name
+    email: your email
+    con: sqlite3.Connection
+
+    Returns
+    -------
+    entry: obj, pandas df
+        the entry will be uploaded
+    
+    Raises
+    ------
+    AssertionError
+        if name is not a string
+    AssertionError
+        if email is not a string
     '''
     assert type(name) == str, 'name must be a string'
     assert type(email) == str, 'email must be a string'
 
     entry = create_user_entry(name, email, con)
     entry.to_sql('dim_user', con, if_exists='append', index=False)
-    print(name, 'added to dim_user')
+
+    pause = entry[['user_id']]
+    pause.to_sql('pause_workout', con, if_exists='append', index=False)
+
+    logger.info('%s added to dim_user', name)
     return entry
 
 
 def pull_prog(user_id, con):
+    '''
+    Pulls progression dictionary for a user_id
+
+    Parameters
+    ----------
+    user_id: int
+    con: sqlite3.Connection
+
+    Returns
+    -------
+    prog_dict: obj, dict
+    '''
     prog = pd.read_sql(
         'SELECT * FROM dim_progression WHERE user_id = ?', con, params=[user_id])
     prog_dict = retrieve_json(prog, 'prog_dict')
     return prog_dict
 
 
-def add_weight(prog_dict, orm_dict):
-    new = {key: orm_dict[key]+prog_dict[key] for key in orm_dict.keys()}
+def add_dicts(dict1, dict2):
+    '''
+    Adds values of two dictionaries together
+    by keys in the first dictionary
+
+    Parameters
+    ----------
+    dict1: obj, dict
+    dict2: obj, dict
+
+    Returns
+    -------
+    new: obj, dict
+        dict1 + values from dict2
+    '''
+    new = {key: dict1[key]+dict2[key] for key in dict1.keys()}
     return new
 
 
 def get_new_orm_dict(one_rep_max, user_id, con):
+    '''
+    Adds progression weights to the latest entry
+    from a df pulled from one_rep_max
+
+    Parameters
+    ----------
+    one_rep_max: obj, pandas df
+        df pulled from one_rep_max table
+        for one user
+    user_id: int
+    con: sqlite3.Connection
+
+    Returns
+    -------
+    new: obj, dict
+        new orm dict with progression weights added
+    '''
     latest = get_latest(one_rep_max)
     if latest is None:
         logger.warning('no info in one_rep_max - populate it first')
         return
     orm_dict = retrieve_json(latest, 'orm_dict')
     prog_dict = pull_prog(user_id, con)
-    new = add_weight(orm_dict, prog_dict)
+    new = add_dicts(orm_dict, prog_dict)
     return new
 
 
 def get_new_orm(one_rep_max, user_id, con):
+    '''
+    Retrieves one_rep_max entry, and creates
+    a new entry for the next month
+
+    Parameters
+    ----------
+    one_rep_max: obj, pandas df
+        one_rep_max table
+    user_id: int
+    con: sqlite3.Connection
+
+    Returns
+    -------
+    obj, pandas df
+        new entry for one_rep_max
+    '''
     latest = get_latest(one_rep_max)
     if latest is None:
         logger.warning('no info in one_rep_max - populate it first')
@@ -183,6 +382,19 @@ def get_new_orm(one_rep_max, user_id, con):
 
 
 class DBHelper(object):
+    '''
+    Class for performing all database operations for
+    the workout puller process
+
+    Parameters
+    ----------
+    con: sqlite3.Connection
+    user: str
+        name of user in dim_users
+    email: str, optional
+        email of username - only needed if user has not yet
+        been populated in dim_users
+    '''
     def __init__(self, con, user, email=None):
         self._user_name = user
         self.con = con
@@ -190,10 +402,22 @@ class DBHelper(object):
             create_user(user, email, con)
         else:
             print(f'Welcome back {user}!')
-        self.user_id = get_user_id(con, user)
+        self.user_id = get_user_id(user, con)
         # assert type(self.user_id) == int, 'user_id must be int'
 
     def set_dim_prog(self, prog_dict):
+        '''
+        Sets dim_progression
+
+        Parameters
+        ----------
+        prog_dict: obj, dict
+        
+        Raises
+        ------
+        AssertionError
+            if prog_dict is not a dict
+        '''
         assert type(prog_dict) == dict, 'prog_dict must be dict'
         entry = pd.DataFrame.from_dict(
             {0: {'user_id': self.user_id, 'prog_dict': json.dumps(prog_dict)}}, orient='index')
@@ -202,6 +426,18 @@ class DBHelper(object):
         return entry
 
     def set_accessory(self, accessory_df):
+        '''
+        Loads entries to accessory table
+
+        Parameters
+        ----------
+        accessory_df: obj, pandas df
+
+        Raises
+        ------
+        AssertionError: if accessory_df is not the correct dimensions
+        and does not have the correct column names
+        '''
         cols = ['me_name', 'ae_name', 'ae_weight', 'sets', 'reps']
         for col in cols:
             assert col in accessory_df.columns, f'{col} is missing from df'
@@ -219,6 +455,24 @@ class DBHelper(object):
         return accessory_df.head(3)
 
     def set_one_rep_max(self, orm_dict):
+        '''
+        Sets one_rep_max for the current month
+
+        Parameters
+        ----------
+        orm_dict: obj, dict
+
+        Notes
+        -----
+        * If an entry exists for this month, it will be overwritten
+        * If an entry does not exist, it will create a new month entry 
+        starting on next Sunday
+        * If there is no entry for this current week, it will create a 
+        "buffer_week" entry with the same weights so something will still
+        be able to be pulled
+        *TODO: Add functionality to set what week the workout starts on
+        (parameterize month creation)
+        '''
         month, week = get_dates(self.user_id, self.con)
         full_orm = table_pull(self.con, self.user_id, 'one_rep_max')
         orm_dict = json.dumps(orm_dict)
@@ -252,6 +506,14 @@ class DBHelper(object):
             logger.info('dict is valid - new entries added to one_rep_max')
 
     def progress_one_rep_max(self):
+        '''
+        Adds progression_dict onto one_rep_max until the current
+        month is populated. 
+        
+        Notes
+        -----
+        Does nothing if one_rep_max is empty or the current month is already populated
+        '''
         orm = self.get_orm()
         if orm is None:
             full_orm = table_pull(self.con, self.user_id, 'one_rep_max')
@@ -260,16 +522,27 @@ class DBHelper(object):
                     'No orm weights are set - you must seed the db with your starting weight using self.set_one_rep_max')
                 return None
             else:
-                latest = get_latest(full_orm)
-                new_orm = get_new_orm(full_orm, self.user_id, self.con)
-                new_orm.to_sql('one_rep_max', self.con,
-                               if_exists='append', index=False)
-                logger.info('new orm set')
+                while orm is None:
+                    latest = get_latest(full_orm)
+                    new_orm = get_new_orm(full_orm, self.user_id, self.con)
+                    new_orm.to_sql('one_rep_max', self.con,
+                                if_exists='append', index=False)
+                    logger.info('orm progressed by one month')
+                    orm = self.get_orm()
         else:
             logger.info(
                 'using current orm - use self.set_one_rep_max if you wish to modify it')
 
     def get_orm(self):
+        '''
+        Gets one_rep_max for this month
+
+        Returns
+        -------
+        orm: obj, pandas df
+        None
+            If there is no one_rep_max populated
+        '''
         month, week = get_dates(self.user_id, self.con)
         if month is None:
             return None
@@ -286,6 +559,13 @@ class DBHelper(object):
         return orm
 
     def get_accessory(self):
+        '''
+        Gets most recently published accessory df from database
+
+        Returns
+        -------
+        obj, pandas df
+        '''
         s = '''
         WITH max_time as 
         (select MAX(publish_time) as dt_max
@@ -300,6 +580,14 @@ class DBHelper(object):
         return acc[cols]
 
     def get_active_users(self):
+        '''
+        Gets users that have not paused their workout
+
+        Returns
+        -------
+        users: list of int
+            list of user_ids
+        '''
         entries = pd.read_sql(
             'SELECT * FROM pause_workout WHERE pause_flag = "False"', self.con)
         users = entries['user_id'].unique().tolist()

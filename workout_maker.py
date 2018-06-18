@@ -110,7 +110,7 @@ def get_kwargs(con, dim_user, index):
         full dim_user pull
     index: int
         index value present in dim_user
-    
+
     Returns
     -------
     kwargs: obj, dict

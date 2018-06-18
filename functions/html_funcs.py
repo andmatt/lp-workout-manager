@@ -1,9 +1,22 @@
 from functions.workout_funcs import reference_gen
 
+
 default_style = 'th {background-color: #3498db;}'
 
 
 def html_wrap(df):
+    '''
+    Converts a pandas dataframe to an html string with
+    bootstrap formatting
+
+    Parameters
+    ----------
+    df: obj, pandas df
+
+    Returns
+    -------
+    html: str
+    '''
     html = df.to_html(classes=["table-bordered", "table-striped", "table-hover",
                                "table-condensed", "span6", "text-center"], index=False)
     html = html.replace('<th>', '<th class="text-center">')
@@ -14,6 +27,20 @@ def border_apply(html, search_term, td_count):
     '''
     applies a border style to all <td> elements for the last occurance
     of a particular term in a table
+
+    Parameters
+    ----------
+    html: str
+        html string
+    search_term: str
+        value of a row to search for last occurences of
+    td_count: int
+        count of td objects to apply style to
+
+    Returns
+    -------
+    parsed: str
+        html string parsed with border <td> formatting
 
     Notes
     -----
@@ -29,6 +56,22 @@ def border_apply(html, search_term, td_count):
 
 
 def ref_html_gen(workout_df):
+    '''
+    Creates reference workout and converts it to an 
+    html string
+
+    Parameters
+    ----------
+    workout_df: obj, pandas df
+
+    Returns
+    -------
+    ref_html: str
+
+    Notes
+    -----
+    should probably seperate the df generation...
+    '''
     ref = reference_gen(workout_df)
     ref_html = html_wrap(ref)
     for workout in ['squat', 'deadlift', 'ohp', 'bench']:
@@ -38,6 +81,17 @@ def ref_html_gen(workout_df):
 
 
 def accessory_html_gen(accessory):
+    '''
+    Converts accessory worokout to html string
+
+    Parameters
+    ----------
+    accessory: obj, pandas df
+
+    Returns
+    -------
+    accessory_html: str
+    '''
     accessory_html = html_wrap(accessory)
     for workout in ['squat', 'deadlift', 'ohp', 'bench']:
         accessory_html = border_apply(
@@ -48,7 +102,21 @@ def accessory_html_gen(accessory):
 
 def full_html(workout_html, ref_html, accessory_html, week, start, end, style=default_style):
     '''
-    Generates full html for each user and syncs to dropbox
+    Generates full html with input of the individual html string and date inputs
+
+    Parameters
+    ----------
+    workout_html: str
+    ref_html: str
+    accessory_html: str
+    week: str
+    start: str
+    end: str
+    style: str
+
+    Returns
+    -------
+    html: str
     '''
     html = f'''\
     <!doctype html>
