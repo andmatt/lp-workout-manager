@@ -98,6 +98,29 @@ def table_pull(con, user_id, table):
     return table
 
 
+def table_update(con, user_id, table, var, val):
+    '''
+    Wrapper function for updating a table
+
+    Parameters
+    ----------
+    con: sqlite3.Connection
+    user_id: int
+    table: str
+    var: str
+        column in table to update
+    val: obj, varying
+        value to update with
+    '''
+    s = f'''
+    UPDATE {table}
+    SET {var} = ?
+    WHERE user_id = ?
+    '''
+    with con.cursor() as cur:
+        cur.execute(s, params=[val, user_id])
+
+
 def delete_params(df_slice):
     '''
     Returns sql arguments for table_overwrite
@@ -327,7 +350,7 @@ def add_dicts(dict1, dict2):
     return new
 
 
-def get_new_orm_dict(one_rep_max, user_id, con):
+def get_new_orm_dict(one_rep_max, user_id, con, prog_dict=None):
     '''
     Adds progression weights to the latest entry
     from a df pulled from one_rep_max
@@ -350,8 +373,9 @@ def get_new_orm_dict(one_rep_max, user_id, con):
         logger.warning('no info in one_rep_max - populate it first')
         return
     orm_dict = retrieve_json(latest, 'orm_dict')
-    prog_dict = pull_prog(user_id, con)
-    assert prog_dict is not None, 'dim_progression is not populated'
+    if prog_dict is None:
+        prog_dict = pull_prog(user_id, con)
+        assert prog_dict is not None, 'dim_progression is not populated'
     new = add_dicts(orm_dict, prog_dict)
     return new
 
@@ -602,6 +626,25 @@ class DBHelper(object):
         acc = pd.read_sql(s, self.con, params=[self.user_id, self.user_id])
         cols = ['me_name', 'ae_name', 'ae_weight', 'sets', 'reps']
         return acc[cols]
+    
+    def pause_workout(self):
+        '''
+        Flags workout as paused
+        '''
+        table_update(self.con, self.user_id, 'pause_workout', 'pause_flag','True')
+        table_update(self.con, self.user_id, 'pause_workout', 'pause_date', now())
+        logger.info('Workout paused')
+
+    def unpause_workout(self):
+        '''
+        Flags workout as unpaused and attempts to set new orm
+        using the latest value in the db
+        '''
+        table_update(self.con, self.user_id, 'pause_workout', 'pause_flag','False')
+        no_prog = {'squat':0 , 'deadlift':0, 'ohp':0, 'bench':0}
+        orm_dict = get_new_orm_dict(one_rep_max, user_id, con, prog_dict=no_prog)
+        self.set_one_rep_max(orm_dict, start_week=1)
+        logger.info('Workout unpaused')
 
     def get_active_users(self):
         '''

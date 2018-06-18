@@ -124,7 +124,7 @@ def get_kwargs(con, dim_user, index):
 
 def get_iterable_kwargs(con):
     '''
-    Pull dim_user and generates kwargs for each entry
+    Pull active dim_user entries and generates kwargs for each entry
 
     Parameters
     ----------
@@ -136,7 +136,15 @@ def get_iterable_kwargs(con):
         iterable of WorkoutMaker kwargs for each
         user in dim_user
     '''
-    dim_user = pd.read_sql('SELECT * FROM dim_user', con)
+    s = '''
+    SELECT * FROM
+    (SELECT user_id FROM pause_workout WHERE
+    pause_flag = "False") a
+    INNER JOIN
+    dim_user b
+    USING (user_id)
+    '''
+    dim_user = pd.read_sql(s, con)
     kwarg_iter = [get_kwargs(con, dim_user, i) for i in dim_user.index]
     return kwarg_iter
 
