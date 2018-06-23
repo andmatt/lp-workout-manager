@@ -3,11 +3,12 @@ import sys
 
 import pandas as pd
 
-from functions.db_funcs import DBHelper, get_db_con, logger, retrieve_json
-from functions.dt_funcs import get_week
+from functions.db_funcs import DBHelper, get_db_con, logger, retrieve_json, table_pull
+from functions.dt_funcs import get_week, get_full_dates, backfill_dates
 from functions.html_funcs import (accessory_html_gen, border_apply, full_html,
                                   html_wrap, ref_html_gen)
 from functions.workout_funcs import get_workout
+from functions.viz_funcs import format_orm, plot_orm
 
 con = get_db_con()
 
@@ -81,6 +82,17 @@ class WorkoutMaker(DBHelper):
         start = orm['data_start_date'][0] + datetime.timedelta(days=week*7)
         end = start + datetime.timedelta(days=7)
         return week, start.date(), end.date()
+    
+    def viz_orm(self):
+        '''
+        Returns a visualization of orm progression
+        '''
+        orm = table_pull(self.con, self.user_id, 'one_rep_max')
+        orm = format_orm(orm)
+        full_dt = get_full_dates(orm)
+        backfilled = backfill_dates(orm, full_dt)
+        plot_orm(orm)
+
 
     def main(self, path='./lp-workout.html'):
         '''

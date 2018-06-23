@@ -1,4 +1,5 @@
 '''functions for performing various datetime operations'''
+
 import datetime
 
 import pandas as pd
@@ -124,7 +125,7 @@ def get_week(one_rep_max):
     -------
     week: int
     '''
-    dt = now(date=False)
+    dt = now(date=True)
     month = get_month(one_rep_max)
     if month is None:
         return None
@@ -179,3 +180,46 @@ def get_dates(user_id, con):
         month = get_month(orm)
         week = get_week(orm)
         return month, week
+
+def get_full_dates(df):
+    """Gets the full date range for a given dataframe
+
+    Parameters
+    ----------
+    df: obj, pandas.DataFrame
+
+    Returns
+    -------
+    full_dt: obj, pandas.DataFrame
+        dataframe with two columns `data_start_date` and
+        `data_end_date` containing full date range
+    """
+    start_dates = pd.to_datetime(df['data_start_date'])
+    min_date = min(start_dates)
+    max_date = max(start_dates)
+    months = int((max_date - min_date).days / 28)
+    full_range = [min_date + datetime.timedelta(weeks=4*x) for x in range(0,months+1)]
+    full_dt = pd.DataFrame({'data_start_date':full_range})
+    full_dt['data_end_date'] = full_dt['data_start_date']+datetime.timedelta(days=27)
+    return full_dt
+
+
+def backfill_dates(df, full_dt):
+    """Backfills missing dates in a df
+
+    Parameters
+    ----------
+    df: obj, pandas.DataFrame
+    full_dt: obj, pandas.DataFrame
+
+    Returns
+    -------
+    full_data: obj, pandas.DataFrame
+        df but with backfilled dates
+    """
+    for col in ['data_start_date', 'data_end_date']:
+        df[col] = pd.to_datetime(df[col])
+
+    full_data = pd.merge(full_dt, df, how='left', on=['data_start_date', 'data_end_date'])
+    full_data = full_data.fillna(method='backfill')
+    return full_data

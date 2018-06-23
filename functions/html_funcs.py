@@ -1,3 +1,5 @@
+'''functions for wrapping df output in html'''
+
 from functions.workout_funcs import reference_gen
 
 
