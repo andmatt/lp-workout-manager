@@ -102,12 +102,13 @@ def accessory_html_gen(accessory):
     return accessory_html
 
 
-def full_html(workout_html, ref_html, accessory_html, week, start, end, style=default_style):
+def full_html(orm_html, workout_html, ref_html, accessory_html, week, start, end, style=default_style):
     '''
     Generates full html with input of the individual html string and date inputs
 
     Parameters
     ----------
+    orm_html: str
     workout_html: str
     ref_html: str
     accessory_html: str
@@ -130,18 +131,23 @@ def full_html(workout_html, ref_html, accessory_html, week, start, end, style=de
       <title> 5-3-1 Workout of the Week </title>
       <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
       </head>
-      <body style="float: left; margin-left: 15px;">
+      <body style="float: left; padding-left: 15px; padding-right: 15px; overflow-x: hidden">
       <h2>5-3-1 Workout of the Week</h2>
         <p>PFA - the workout of the week. It is currently <b>Week {week}</b> <br>
            <b>Week {week}</b> goes from {start} till {end}
         </p>
+        <h4>One Rep Maxes:</h4>
+        {orm_html}
+        <br>
         <h4>Main Workout:</h4>
         {workout_html}
         <br>
         <h4>Weight References:</h4>
-        {ref_html}<br>
+        {ref_html}
+        <br>
         <h4>Accessory Exercises:</h4>
-        {accessory_html}<br>
+        {accessory_html}
+        <br>
       </body>
     </html>
     '''
