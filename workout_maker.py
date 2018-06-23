@@ -1,9 +1,12 @@
+#! /usr/bin/python
+
 import datetime
+import os
 import sys
 
 import pandas as pd
 
-from functions.db_funcs import DBHelper, get_db_con, logger, retrieve_json, table_pull
+from functions.db_funcs import DBHelper, get_db_con, LOCAL_DIR, logger, retrieve_json, table_pull
 from functions.dt_funcs import get_week, get_full_dates, backfill_dates
 from functions.html_funcs import (accessory_html_gen, border_apply, full_html,
                                   html_wrap, ref_html_gen)
@@ -46,6 +49,15 @@ class WorkoutMaker(DBHelper):
         week = get_week(orm)
         orm_dict = retrieve_json(orm, 'orm_dict')
         self.workout_df = get_workout(orm_dict, weeks=[week])
+    
+    def create_orm_html(self):
+        '''
+        converts orm df to html
+        '''
+        orm = pd.DataFrame(retrieve_json(self.get_orm(), 'orm_dict'), index=[0])
+        orm = orm[['deadlift', 'squat', 'bench', 'ohp']]
+        orm_html = html_wrap(orm)
+        return orm_html
 
     def create_workout_html(self):
         '''
@@ -79,10 +91,10 @@ class WorkoutMaker(DBHelper):
         '''
         orm = self.get_orm().reset_index(drop=True)
         week = get_week(orm)
-        start = orm['data_start_date'][0] + datetime.timedelta(days=week*7)
+        start = orm['data_start_date'][0] + datetime.timedelta(days=(week-1)*7)
         end = start + datetime.timedelta(days=7)
         return week, start.date(), end.date()
-    
+
     def viz_orm(self):
         '''
         Returns a visualization of orm progression
@@ -93,19 +105,21 @@ class WorkoutMaker(DBHelper):
         backfilled = backfill_dates(orm, full_dt)
         plot_orm(orm)
 
-
-    def main(self, path='./lp-workout.html'):
+    def run(self, file='lp-workout.html'):
         '''
         Runs all relevant funcions and saves the final
         html output to `path`
         '''
         self.create_workout_df()
+        orm_html = self.create_orm_html()
         workout_html = self.create_workout_html()
         ref_html = self.create_reference_html()
         accessory_html = self.create_accessory_html()
         week, start, end = self.get_week_vals()
-        html = full_html(workout_html, ref_html,
+        html = full_html(orm_html, workout_html, ref_html,
                          accessory_html, week, start, end)
+        fname = f'{self.user}-{file}'
+        path = os.path.join(LOCAL_DIR, fname)
         with open(path, 'w') as f:
             f.write(html)
             logger.info(f'workout saved to {path}')

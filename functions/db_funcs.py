@@ -10,11 +10,13 @@ from logging import Formatter, StreamHandler
 from logging.handlers import RotatingFileHandler
 
 import numpy as np
+import os
 import pandas as pd
 
 from functions.dt_funcs import (buffer_week, get_dates, get_latest, get_month,
                                 get_week, new_month, now)
 
+LOCAL_DIR = 'C:/Users/Matt/Dropbox/lp-workout/'
 
 def get_logger():
     '''
@@ -29,7 +31,7 @@ def get_logger():
     sh = StreamHandler(stream=sys.stdout)
     sh.setFormatter(formatter)
     fh = RotatingFileHandler(
-        './workout.log', maxBytes=10*1024*1024, backupCount=0)
+        os.path.join(LOCAL_DIR, 'workout.log'), maxBytes=10*1024*1024, backupCount=0)
     fh.setFormatter(formatter)
     logger.addHandler(sh)
     logger.addHandler(fh)
@@ -53,6 +55,7 @@ def get_db_con(db='workout.db'):
     -------
     con: sqlite3.Connection
     '''
+    db_path = os.path.join(LOCAL_DIR, db)
     sqlite3.register_adapter(np.int64, lambda x: int(x))
     sqlite3.register_adapter(pd.Timestamp, lambda x: str(x))
     con = sqlite3.connect(db, detect_types=sqlite3.PARSE_DECLTYPES)
@@ -438,6 +441,7 @@ class DBHelper(object):
         else:
             print(f'Welcome back {user}!')
         self.user_id = get_user_id(user, con)
+        self.user = user
         # assert type(self.user_id) == int, 'user_id must be int'
 
     def set_dim_prog(self, prog_dict):
