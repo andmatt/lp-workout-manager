@@ -542,7 +542,7 @@ class DBHelper(object):
             if full_orm.shape[0] > 0:
                 for i in [0, 1]:
                     match = get_month(full_orm, custom_dt=buffer[i])
-                    if match.shape[0] > 0:
+                    if match:
                         need_buffer = False
             if need_buffer == False:
                 logger.info('buffer week not needed')
