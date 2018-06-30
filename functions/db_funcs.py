@@ -17,6 +17,9 @@ from functions.dt_funcs import (buffer_week, get_dates, get_latest, get_month,
                                 get_week, new_month, now)
 
 LOCAL_DIR = 'C:/Users/Matt/Dropbox/lp-workout/'
+if os.path.isdir(LOCAL_DIR) == False:
+    LOCAL_DIR = '.'
+
 
 def get_logger():
     '''
@@ -520,7 +523,8 @@ class DBHelper(object):
         buffer = buffer_week()
         if month is not None:
             if month['data_start_date'][0] == buffer[0] and month['data_end_date'][0] == buffer[1]:
-                logger.warning('Overwriting entry after buffer week - make sure this is what you wanted')
+                logger.warning(
+                    'Overwriting entry after buffer week - make sure this is what you wanted')
                 month = None
         if month is not None:
             update = month.copy()
@@ -630,13 +634,15 @@ class DBHelper(object):
         acc = pd.read_sql(s, self.con, params=[self.user_id, self.user_id])
         cols = ['me_name', 'ae_name', 'ae_weight', 'sets', 'reps']
         return acc[cols]
-    
+
     def pause_workout(self):
         '''
         Flags workout as paused
         '''
-        table_update(self.con, self.user_id, 'pause_workout', 'pause_flag','True')
-        table_update(self.con, self.user_id, 'pause_workout', 'pause_date', now())
+        table_update(self.con, self.user_id,
+                     'pause_workout', 'pause_flag', 'True')
+        table_update(self.con, self.user_id,
+                     'pause_workout', 'pause_date', now())
         logger.info('Workout paused')
 
     def unpause_workout(self):
@@ -644,9 +650,11 @@ class DBHelper(object):
         Flags workout as unpaused and attempts to set new orm
         using the latest value in the db
         '''
-        table_update(self.con, self.user_id, 'pause_workout', 'pause_flag','False')
-        no_prog = {'squat':0 , 'deadlift':0, 'ohp':0, 'bench':0}
-        orm_dict = get_new_orm_dict(one_rep_max, user_id, con, prog_dict=no_prog)
+        table_update(self.con, self.user_id,
+                     'pause_workout', 'pause_flag', 'False')
+        no_prog = {'squat': 0, 'deadlift': 0, 'ohp': 0, 'bench': 0}
+        orm_dict = get_new_orm_dict(
+            one_rep_max, user_id, con, prog_dict=no_prog)
         self.set_one_rep_max(orm_dict, start_week=1)
         logger.info('Workout unpaused')
 
